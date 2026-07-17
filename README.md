@@ -42,6 +42,9 @@ python -m http.server 8765
 - Pivot / Offsetによるコマ単位の位置合わせ
 - コマ別表示時間、ループ、無効化
 - ライブアニメーションプレビュー
+- プレビュー上のドラッグによる現在フレームのOffset調整
+- 押している間だけ前後フレームへ切り替える比較ボタン
+- 最終フレームから再生した場合の先頭フレーム自動復帰
 - 前コマのオニオンスキン
 - 共通出力サイズ、Anchor、トリミング位置の調整
 - 選択フレーム／全フレームの透明余白自動トリム（Pivotを補正して表示位置を維持）
@@ -86,6 +89,20 @@ Y = output.anchor.y + frame.offset.y - frame.pivot.y - output.cropOffset.y
 ```
 
 `cropOffset`は全フレーム共通の出力トリミング位置調整です。
+
+## 切り抜きサイズを広げても位置を維持する
+
+切り抜き幅を左右へ広げる場合は、左へ広げた量だけ `source.x` を減らし、同じ量だけ `pivot.x` を増やします。これによりアニメーション上の基準位置は変わりません。
+
+例：幅100を左右10pxずつ広げて幅120にする場合
+
+```text
+source.x     = source.x - 10
+source.width = source.width + 20
+pivot.x      = pivot.x + 10
+```
+
+高さについても同様に、上へ広げた量だけ `source.y` を減らし、`pivot.y` を増やします。
 
 「全フレームを包含」は、各フレームの `source` / `pivot` / `offset` から共通の最小出力範囲を計算し、指定余白を加えて `output.width` / `output.height` / `output.anchor` を更新します。
 

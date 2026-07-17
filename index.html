@@ -73,10 +73,15 @@
         </div>
         <div class="preview-area">
           <div id="previewCanvasWrap" class="preview-canvas-wrap checkerboard">
-            <canvas id="previewCanvas"></canvas>
+            <canvas id="previewCanvas" title="ドラッグして現在フレームのOffsetを調整"></canvas>
+          </div>
+          <div class="preview-compare-controls" aria-label="前後フレームの一時比較">
+            <button id="peekPreviousFrameButton" class="button small hold-button" type="button" title="押している間だけ前の有効フレームを表示">押して前コマ</button>
+            <button id="peekNextFrameButton" class="button small hold-button" type="button" title="押している間だけ次の有効フレームを表示">押して次コマ</button>
           </div>
           <div class="preview-meta">
             <span id="previewFrameLabel">Frame 0 / 0</span>
+            <span class="preview-drag-hint">ドラッグ：現在コマのOffset調整</span>
             <label>表示倍率
               <select id="previewScaleSelect">
                 <option value="1">1×</option>

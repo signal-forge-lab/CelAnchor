@@ -43,6 +43,8 @@
     view: { zoom: 1, panX: 0, panY: 0 },
     drag: null,
     dragSnapshot: null,
+    previewDrag: null,
+    previewPeek: null,
     timelineDragIndex: null,
     showGuides: true,
     onionSkin: false,
@@ -74,6 +76,8 @@
     previousFrameButton: $('previousFrameButton'),
     playButton: $('playButton'),
     nextFrameButton: $('nextFrameButton'),
+    peekPreviousFrameButton: $('peekPreviousFrameButton'),
+    peekNextFrameButton: $('peekNextFrameButton'),
     selectedFrameId: $('selectedFrameId'),
     frameFieldset: $('frameFieldset'),
     positionFieldset: $('positionFieldset'),
@@ -165,6 +169,20 @@
     if (nextPosition >= indexes.length) return state.project.playback.loop ? indexes[0] : indexes[indexes.length - 1];
     if (nextPosition < 0) return state.project.playback.loop ? indexes[indexes.length - 1] : indexes[0];
     return indexes[nextPosition];
+  }
+
+  function adjacentFrameIndex(from, direction) {
+    const indexes = enabledFrameIndexes();
+    if (!indexes.length) return -1;
+    const currentPosition = indexes.indexOf(from);
+    if (currentPosition < 0) return direction > 0 ? indexes[0] : indexes[indexes.length - 1];
+    const nextPosition = currentPosition + direction;
+    if (nextPosition < 0 || nextPosition >= indexes.length) return from;
+    return indexes[nextPosition];
+  }
+
+  function displayedPreviewIndex() {
+    return state.previewPeek?.targetIndex ?? state.currentPreviewIndex;
   }
 
   function frameDuration(frame) {
@@ -307,6 +325,13 @@
   function updatePlayButton() {
     dom.playButton.textContent = state.playing ? 'Ⅱ' : '▶';
     dom.playButton.title = state.playing ? '一時停止' : '再生';
+    const indexes = enabledFrameIndexes();
+    const hasFrames = indexes.length > 0;
+    dom.playButton.disabled = !hasFrames;
+    dom.previousFrameButton.disabled = !hasFrames;
+    dom.nextFrameButton.disabled = !hasFrames;
+    dom.peekPreviousFrameButton.disabled = !hasFrames || adjacentFrameIndex(state.currentPreviewIndex, -1) === state.currentPreviewIndex;
+    dom.peekNextFrameButton.disabled = !hasFrames || adjacentFrameIndex(state.currentPreviewIndex, 1) === state.currentPreviewIndex;
   }
 
   function selectFrame(index, syncPreview = true) {
@@ -540,8 +565,8 @@
   function updatePreviewCanvasSize() {
     const width = state.project.output.width;
     const height = state.project.output.height;
-    dom.previewCanvas.width = width;
-    dom.previewCanvas.height = height;
+    if (dom.previewCanvas.width !== width) dom.previewCanvas.width = width;
+    if (dom.previewCanvas.height !== height) dom.previewCanvas.height = height;
     dom.previewCanvas.style.width = `${width * state.previewScale}px`;
     dom.previewCanvas.style.height = `${height * state.previewScale}px`;
   }
@@ -982,16 +1007,19 @@
     const width = state.project.output.width;
     const height = state.project.output.height;
     previewCtx.clearRect(0, 0, width, height);
-    const frame = state.project.frames[state.currentPreviewIndex] || null;
+    const previewIndex = displayedPreviewIndex();
+    const frame = state.project.frames[previewIndex] || null;
     if (frame && state.image) {
       if (state.onionSkin) {
-        const previousIndex = nextFrameIndex(state.currentPreviewIndex, -1);
-        if (previousIndex >= 0 && previousIndex !== state.currentPreviewIndex) drawFrameToContext(previewCtx, state.project.frames[previousIndex], .22);
+        const previousIndex = nextFrameIndex(previewIndex, -1);
+        if (previousIndex >= 0 && previousIndex !== previewIndex) drawFrameToContext(previewCtx, state.project.frames[previousIndex], .22);
       }
       drawFrameToContext(previewCtx, frame, 1);
     }
     if (state.showGuides) drawPreviewGuides();
-    dom.previewFrameLabel.textContent = frame ? `Frame ${state.currentPreviewIndex + 1} / ${state.project.frames.length} — ${frame.id}` : 'Frame 0 / 0';
+    const prefix = state.previewPeek ? '比較表示: ' : '';
+    dom.previewFrameLabel.textContent = frame ? `${prefix}Frame ${previewIndex + 1} / ${state.project.frames.length} — ${frame.id}` : 'Frame 0 / 0';
+    updatePlayButton();
   }
 
   function drawPreviewGuides() {
@@ -1015,12 +1043,107 @@
   }
 
   function togglePlay() {
-    if (!enabledFrameIndexes().length) return;
-    state.playing = !state.playing;
+    const indexes = enabledFrameIndexes();
+    if (!indexes.length) return;
+    const starting = !state.playing;
+    state.playing = starting;
     state.playElapsed = 0;
     state.playLastTimestamp = performance.now();
-    if (state.currentPreviewIndex < 0 || !state.project.frames[state.currentPreviewIndex]?.enabled) state.currentPreviewIndex = enabledFrameIndexes()[0];
+    if (starting) {
+      if (state.currentPreviewIndex < 0 || !state.project.frames[state.currentPreviewIndex]?.enabled || state.currentPreviewIndex === indexes[indexes.length - 1]) {
+        state.currentPreviewIndex = indexes[0];
+      }
+      renderPreview();
+      renderTimeline(false);
+    }
     updatePlayButton();
+  }
+
+  function previewPointer(event) {
+    const rect = dom.previewCanvas.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) * (dom.previewCanvas.width / rect.width),
+      y: (event.clientY - rect.top) * (dom.previewCanvas.height / rect.height)
+    };
+  }
+
+  function startPreviewDrag(event) {
+    if (!state.image || state.previewPeek) return;
+    const index = state.currentPreviewIndex;
+    const frame = state.project.frames[index];
+    if (!frame || !frame.enabled) return;
+    event.preventDefault();
+    state.playing = false;
+    updatePlayButton();
+    state.selectedIndex = index;
+    const point = previewPointer(event);
+    state.previewDrag = {
+      pointerId: event.pointerId,
+      startPoint: point,
+      startOffset: clone(frame.offset),
+      snapshot: clone(state.project)
+    };
+    dom.previewCanvas.setPointerCapture(event.pointerId);
+    dom.previewCanvas.classList.add('dragging');
+    updateInspector();
+    renderSheet();
+    renderTimeline();
+  }
+
+  function movePreviewDrag(event) {
+    if (!state.previewDrag || event.pointerId !== state.previewDrag.pointerId) return;
+    event.preventDefault();
+    const frame = state.project.frames[state.currentPreviewIndex];
+    if (!frame) return;
+    const point = previewPointer(event);
+    frame.offset.x = state.previewDrag.startOffset.x + Math.round(point.x - state.previewDrag.startPoint.x);
+    frame.offset.y = state.previewDrag.startOffset.y + Math.round(point.y - state.previewDrag.startPoint.y);
+    updateInspector();
+    syncJsonText();
+    updateValidationStatus();
+    renderPreview();
+    renderSheet();
+  }
+
+  function endPreviewDrag(event) {
+    if (!state.previewDrag || event.pointerId !== state.previewDrag.pointerId) return;
+    if (dom.previewCanvas.hasPointerCapture(event.pointerId)) dom.previewCanvas.releasePointerCapture(event.pointerId);
+    dom.previewCanvas.classList.remove('dragging');
+    const snapshot = state.previewDrag.snapshot;
+    state.previewDrag = null;
+    if (JSON.stringify(snapshot) !== JSON.stringify(state.project)) {
+      pushUndo(snapshot);
+      syncAfterMutation({ timeline: false });
+    }
+  }
+
+  function startPreviewPeek(direction, event) {
+    if (state.previewPeek) return;
+    const baseIndex = state.currentPreviewIndex;
+    const targetIndex = adjacentFrameIndex(baseIndex, direction);
+    if (targetIndex < 0 || targetIndex === baseIndex) return;
+    event.preventDefault();
+    const button = event.currentTarget;
+    state.previewPeek = { baseIndex, targetIndex, wasPlaying: state.playing, button };
+    state.playing = false;
+    state.playElapsed = 0;
+    button.setPointerCapture(event.pointerId);
+    button.classList.add('active');
+    renderPreview();
+  }
+
+  function endPreviewPeek(event) {
+    if (!state.previewPeek) return;
+    const { wasPlaying, button } = state.previewPeek;
+    state.previewPeek = null;
+    button.classList.remove('active');
+    if (event?.pointerId != null && button.hasPointerCapture(event.pointerId)) button.releasePointerCapture(event.pointerId);
+    if (wasPlaying) {
+      state.playing = true;
+      state.playElapsed = 0;
+      state.playLastTimestamp = performance.now();
+    }
+    renderPreview();
   }
 
   function stepFrame(direction) {
@@ -1316,6 +1439,13 @@
     dom.previousFrameButton.addEventListener('click', () => stepFrame(-1));
     dom.nextFrameButton.addEventListener('click', () => stepFrame(1));
     dom.playButton.addEventListener('click', togglePlay);
+    dom.peekPreviousFrameButton.addEventListener('pointerdown', (event) => startPreviewPeek(-1, event));
+    dom.peekNextFrameButton.addEventListener('pointerdown', (event) => startPreviewPeek(1, event));
+    [dom.peekPreviousFrameButton, dom.peekNextFrameButton].forEach((button) => {
+      button.addEventListener('pointerup', endPreviewPeek);
+      button.addEventListener('pointercancel', endPreviewPeek);
+      button.addEventListener('lostpointercapture', endPreviewPeek);
+    });
     dom.previewScaleSelect.addEventListener('change', () => { state.previewScale = Number(dom.previewScaleSelect.value); renderPreview(); });
     dom.showGuidesInput.addEventListener('change', () => { state.showGuides = dom.showGuidesInput.checked; renderPreview(); });
     dom.onionSkinInput.addEventListener('change', () => { state.onionSkin = dom.onionSkinInput.checked; renderPreview(); });
@@ -1337,6 +1467,11 @@
     dom.sheetCanvasWrap.addEventListener('pointercancel', endSheetDrag);
     dom.sheetCanvasWrap.addEventListener('wheel', zoomSheet, { passive: false });
     dom.sheetCanvasWrap.addEventListener('keydown', keyboardSheet);
+
+    dom.previewCanvas.addEventListener('pointerdown', startPreviewDrag);
+    dom.previewCanvas.addEventListener('pointermove', movePreviewDrag);
+    dom.previewCanvas.addEventListener('pointerup', endPreviewDrag);
+    dom.previewCanvas.addEventListener('pointercancel', endPreviewDrag);
 
     window.addEventListener('keydown', (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {

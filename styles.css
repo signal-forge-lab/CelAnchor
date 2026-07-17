@@ -72,9 +72,14 @@ canvas { display: block; image-rendering: pixelated; }
 .preview-area { flex: 1; display: grid; place-content: center; gap: 14px; padding: 18px; min-height: 480px; overflow: auto; }
 .preview-canvas-wrap { display: inline-grid; place-items: center; padding: 1px; border: 1px solid var(--border); box-shadow: 0 12px 25px rgba(0,0,0,.24); }
 .checkerboard { background-color: #d5d7da; background-image: linear-gradient(45deg,#aeb2b7 25%,transparent 25%), linear-gradient(-45deg,#aeb2b7 25%,transparent 25%), linear-gradient(45deg,transparent 75%,#aeb2b7 75%), linear-gradient(-45deg,transparent 75%,#aeb2b7 75%); background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; }
-#previewCanvas { background: transparent; }
+#previewCanvas { background: transparent; cursor: grab; touch-action: none; user-select: none; }
+#previewCanvas.dragging { cursor: grabbing; }
+.preview-compare-controls { display: flex; justify-content: center; align-items: center; gap: 8px; }
+.hold-button { min-width: 104px; }
+.hold-button.active { border-color: rgba(122,162,247,.8); background: rgba(122,162,247,.22); }
 .preview-meta { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); }
 .preview-meta label { display: flex; align-items: center; gap: 6px; }
+.preview-drag-hint { color: var(--muted); opacity: .75; }
 
 .inspector { background: var(--sidebar); min-height: 0; overflow: auto; }
 .tabs { position: sticky; top: 0; z-index: 2; display: grid; grid-template-columns: repeat(3, 1fr); background: var(--sidebar); border-bottom: 1px solid var(--border); }
