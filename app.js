@@ -8,6 +8,12 @@
     const parsed = Number.parseInt(String(value), 10);
     return Number.isFinite(parsed) ? parsed : fallback;
   };
+  const temporarySaveDb = {
+    name: 'celanchor-workspace',
+    version: 1,
+    store: 'temporary-saves',
+    key: 'current'
+  };
 
   const defaultProject = () => ({
     schemaVersion: 1,
@@ -33,6 +39,7 @@
     project: defaultProject(),
     image: null,
     imageInfo: null,
+    imageBlob: null,
     selectedIndex: -1,
     currentPreviewIndex: -1,
     playing: false,
@@ -49,13 +56,22 @@
     showGuides: true,
     onionSkin: false,
     previewScale: 2,
+    workspaceSplitRatio: 0.61,
+    workspaceSplitterDrag: null,
     includeJsonInZip: true,
     toastTimer: null
   };
 
   const dom = {
+    workspace: document.querySelector('.workspace'),
+    sheetPanel: document.querySelector('.sheet-panel'),
+    previewPanel: document.querySelector('.preview-panel'),
+    inspector: document.querySelector('.inspector'),
+    workspaceSplitter: $('workspaceSplitter'),
     imageInput: $('imageInput'),
     jsonFileInput: $('jsonFileInput'),
+    temporarySaveButton: $('temporarySaveButton'),
+    restoreTemporarySaveButton: $('restoreTemporarySaveButton'),
     saveJsonButton: $('saveJsonButton'),
     exportZipButton: $('exportZipButton'),
     imageStatus: $('imageStatus'),
@@ -91,6 +107,7 @@
     centerAnchorButton: $('centerAnchorButton'), bottomAnchorButton: $('bottomAnchorButton'), autoFitMargin: $('autoFitMargin'), autoFitOutputButton: $('autoFitOutputButton'),
     transparencyMode: $('transparencyMode'), keyColor: $('keyColor'), colorTolerance: $('colorTolerance'), matteColor: $('matteColor'), trimAllFramesButton: $('trimAllFramesButton'),
     fileNamePattern: $('fileNamePattern'), includeJsonInZip: $('includeJsonInZip'), defaultDurationMs: $('defaultDurationMs'), loopPlayback: $('loopPlayback'),
+    applyDurationAllButton: $('applyDurationAllButton'),
     jsonEditor: $('jsonEditor'), applyJsonButton: $('applyJsonButton'), formatJsonButton: $('formatJsonButton'), copyJsonButton: $('copyJsonButton'), jsonErrors: $('jsonErrors'),
     timelineFrames: $('timelineFrames'), undoButton: $('undoButton'), redoButton: $('redoButton'),
     toast: $('toast')
@@ -410,29 +427,34 @@
     });
   }
 
-  async function loadImageFile(file) {
-    if (!file) return;
+  async function loadImageFile(file, { announce = true, fit = true } = {}) {
+    if (!file) return false;
     setRuntimeStatus('画像を読み込み中…');
     const url = URL.createObjectURL(file);
     const image = new Image();
-    image.onload = () => {
-      URL.revokeObjectURL(url);
-      state.image = image;
-      state.imageInfo = { fileName: file.name, width: image.naturalWidth, height: image.naturalHeight, mimeType: file.type };
-      state.project.image = { fileName: file.name };
-      dom.imageStatus.textContent = `${file.name} — ${image.naturalWidth}×${image.naturalHeight}`;
-      dom.sheetEmpty.hidden = true;
-      fitSheet();
-      syncAfterMutation();
-      setRuntimeStatus('Ready');
-      toast('スプライトシートを読み込みました。');
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      setRuntimeStatus('画像の読み込みに失敗');
-      toast('画像を読み込めませんでした。', true);
-    };
-    image.src = url;
+    return new Promise((resolve) => {
+      image.onload = () => {
+        URL.revokeObjectURL(url);
+        state.image = image;
+        state.imageBlob = file.slice(0, file.size, file.type || 'application/octet-stream');
+        state.imageInfo = { fileName: file.name, width: image.naturalWidth, height: image.naturalHeight, mimeType: file.type };
+        state.project.image = { fileName: file.name };
+        dom.imageStatus.textContent = `${file.name} — ${image.naturalWidth}×${image.naturalHeight}`;
+        dom.sheetEmpty.hidden = true;
+        if (fit) fitSheet();
+        syncAfterMutation();
+        setRuntimeStatus('Ready');
+        if (announce) toast('スプライトシートを読み込みました。');
+        resolve(true);
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        setRuntimeStatus('画像の読み込みに失敗');
+        toast('画像を読み込めませんでした。', true);
+        resolve(false);
+      };
+      image.src = url;
+    });
   }
 
   async function loadJsonFile(file) {
@@ -443,6 +465,181 @@
       toast('JSONを読み込みました。');
     } catch (error) {
       toast(`JSONの読み込みに失敗しました: ${error.message}`, true);
+    }
+  }
+
+  function openTemporarySaveDatabase() {
+    return new Promise((resolve, reject) => {
+      if (!('indexedDB' in window)) {
+        reject(new Error('このブラウザはIndexedDBに対応していません。'));
+        return;
+      }
+      const request = indexedDB.open(temporarySaveDb.name, temporarySaveDb.version);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains(temporarySaveDb.store)) {
+          database.createObjectStore(temporarySaveDb.store);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('一時保存領域を開けませんでした。'));
+    });
+  }
+
+  async function readTemporarySave() {
+    const database = await openTemporarySaveDatabase();
+    try {
+      return await new Promise((resolve, reject) => {
+        const transaction = database.transaction(temporarySaveDb.store, 'readonly');
+        const request = transaction.objectStore(temporarySaveDb.store).get(temporarySaveDb.key);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error || new Error('一時保存を読み込めませんでした。'));
+      });
+    } finally {
+      database.close();
+    }
+  }
+
+  async function writeTemporarySave(value) {
+    const database = await openTemporarySaveDatabase();
+    try {
+      await new Promise((resolve, reject) => {
+        const transaction = database.transaction(temporarySaveDb.store, 'readwrite');
+        transaction.objectStore(temporarySaveDb.store).put(value, temporarySaveDb.key);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error || new Error('一時保存を書き込めませんでした。'));
+        transaction.onabort = () => reject(transaction.error || new Error('一時保存が中断されました。'));
+      });
+    } finally {
+      database.close();
+    }
+  }
+
+  function temporarySavePayload() {
+    return {
+      formatVersion: 1,
+      savedAt: new Date().toISOString(),
+      project: clone(state.project),
+      imageBlob: state.imageBlob || null,
+      imageInfo: state.imageInfo ? clone(state.imageInfo) : null,
+      ui: {
+        selectedIndex: state.selectedIndex,
+        currentPreviewIndex: state.currentPreviewIndex,
+        view: clone(state.view),
+        previewScale: state.previewScale,
+        showGuides: state.showGuides,
+        onionSkin: state.onionSkin,
+        includeJsonInZip: state.includeJsonInZip,
+        workspaceSplitRatio: state.workspaceSplitRatio
+      }
+    };
+  }
+
+  async function refreshTemporarySaveAvailability() {
+    try {
+      const saved = await readTemporarySave();
+      dom.restoreTemporarySaveButton.disabled = !saved?.project;
+      dom.restoreTemporarySaveButton.title = saved?.savedAt
+        ? `保存日時: ${new Date(saved.savedAt).toLocaleString()}`
+        : '復元できる一時保存はありません';
+    } catch (error) {
+      dom.restoreTemporarySaveButton.disabled = true;
+      dom.restoreTemporarySaveButton.title = error.message;
+    }
+  }
+
+  async function saveTemporaryWorkspace() {
+    dom.temporarySaveButton.disabled = true;
+    setRuntimeStatus('作業状態を一時保存中…');
+    try {
+      const payload = temporarySavePayload();
+      await writeTemporarySave(payload);
+      dom.restoreTemporarySaveButton.disabled = false;
+      dom.restoreTemporarySaveButton.title = `保存日時: ${new Date(payload.savedAt).toLocaleString()}`;
+      setRuntimeStatus('Ready');
+      toast(state.imageBlob ? '画像を含む作業状態を一時保存しました。' : '作業状態を一時保存しました。');
+    } catch (error) {
+      setRuntimeStatus('一時保存に失敗');
+      const detail = error?.name === 'QuotaExceededError' ? 'ブラウザの保存容量を超えました。' : error.message;
+      toast(`一時保存に失敗しました: ${detail}`, true);
+    } finally {
+      dom.temporarySaveButton.disabled = false;
+    }
+  }
+
+  function clearLoadedImage() {
+    state.image = null;
+    state.imageBlob = null;
+    state.imageInfo = null;
+    dom.imageStatus.textContent = '画像未選択';
+    dom.sheetEmpty.hidden = false;
+  }
+
+  function restoreTemporaryUi(ui = {}) {
+    state.selectedIndex = toInt(ui.selectedIndex, state.project.frames.length ? 0 : -1);
+    state.currentPreviewIndex = toInt(ui.currentPreviewIndex, state.selectedIndex);
+    state.view = { ...state.view, ...(ui.view || {}) };
+    state.previewScale = [1, 2, 3, 4].includes(Number(ui.previewScale)) ? Number(ui.previewScale) : 2;
+    state.showGuides = ui.showGuides !== false;
+    state.onionSkin = ui.onionSkin === true;
+    state.includeJsonInZip = ui.includeJsonInZip !== false;
+    state.workspaceSplitRatio = clamp(Number(ui.workspaceSplitRatio) || 0.61, 0.2, 0.8);
+    dom.previewScaleSelect.value = String(state.previewScale);
+    dom.showGuidesInput.checked = state.showGuides;
+    dom.onionSkinInput.checked = state.onionSkin;
+    dom.includeJsonInZip.checked = state.includeJsonInZip;
+  }
+
+  async function restoreTemporaryWorkspace() {
+    let saved;
+    try {
+      saved = await readTemporarySave();
+    } catch (error) {
+      toast(`一時保存を確認できませんでした: ${error.message}`, true);
+      return;
+    }
+    if (!saved?.project) {
+      dom.restoreTemporarySaveButton.disabled = true;
+      toast('復元できる一時保存がありません。', true);
+      return;
+    }
+    if (!window.confirm('現在の作業状態を一時保存の内容で置き換えます。復元しますか？')) return;
+
+    dom.restoreTemporarySaveButton.disabled = true;
+    setRuntimeStatus('一時保存を復元中…');
+    try {
+      const project = normalizeProject(saved.project);
+      const errors = validateProject(project, false);
+      if (errors.length) throw new Error(`保存データに${errors.length}件の問題があります。`);
+
+      state.project = project;
+      state.playing = false;
+      state.previewPeek = null;
+      state.undo.length = 0;
+      state.redo.length = 0;
+      restoreTemporaryUi(saved.ui);
+      normalizeSelection();
+      applyWorkspaceSplitRatio();
+
+      if (saved.imageBlob instanceof Blob) {
+        const fileName = saved.imageInfo?.fileName || project.image?.fileName || 'sprite-sheet.png';
+        const fileType = saved.imageInfo?.mimeType || saved.imageBlob.type || 'image/png';
+        const file = new File([saved.imageBlob], fileName, { type: fileType });
+        const loaded = await loadImageFile(file, { announce: false, fit: false });
+        if (!loaded) throw new Error('保存されていた画像を復元できませんでした。');
+      } else {
+        clearLoadedImage();
+        refreshAll();
+      }
+
+      updateHistoryButtons();
+      setRuntimeStatus('Ready');
+      toast('一時保存した作業状態を復元しました。');
+    } catch (error) {
+      setRuntimeStatus('一時保存の復元に失敗');
+      toast(`復元に失敗しました: ${error.message}`, true);
+    } finally {
+      await refreshTemporarySaveAvailability();
     }
   }
 
@@ -560,6 +757,111 @@
     });
     dom.autoFitOutputButton.addEventListener('click', autoFitOutput);
     dom.trimAllFramesButton.addEventListener('click', trimAllFrames);
+    dom.applyDurationAllButton.addEventListener('click', applyDefaultDurationToAllFrames);
+  }
+
+  function applyDefaultDurationToAllFrames() {
+    if (!state.project.frames.length) {
+      toast('適用するフレームがありません。', true);
+      return;
+    }
+    const duration = Math.max(1, toInt(state.project.playback.defaultDurationMs, 100));
+    const unchanged = state.project.frames.every((frame) => frame.durationMs === duration);
+    if (unchanged) {
+      toast(`全フレームがすでに ${duration}ms です。`);
+      return;
+    }
+    pushUndo();
+    state.project.frames.forEach((frame) => { frame.durationMs = duration; });
+    syncAfterMutation();
+    toast(`${state.project.frames.length}フレームを ${duration}ms に変更しました。`);
+  }
+
+  function workspacePaneMetrics() {
+    const workspaceStyle = getComputedStyle(dom.workspace);
+    const gap = Number.parseFloat(workspaceStyle.columnGap) || 0;
+    const paddingLeft = Number.parseFloat(workspaceStyle.paddingLeft) || 0;
+    const paddingRight = Number.parseFloat(workspaceStyle.paddingRight) || 0;
+    const inspectorWidth = dom.inspector.getBoundingClientRect().width || 350;
+    const splitterWidth = dom.workspaceSplitter.getBoundingClientRect().width || 8;
+    const available = Math.max(
+      1,
+      dom.workspace.clientWidth - paddingLeft - paddingRight - inspectorWidth - splitterWidth - gap * 3
+    );
+    return { available, minSheet: 360, minPreview: 300 };
+  }
+
+  function applyWorkspaceSplitRatio() {
+    if (!dom.workspace || !dom.workspaceSplitter) return;
+    const { available, minSheet, minPreview } = workspacePaneMetrics();
+    const minRatio = minSheet / available;
+    const maxRatio = 1 - minPreview / available;
+    const boundedRatio = minRatio <= maxRatio ? clamp(state.workspaceSplitRatio, minRatio, maxRatio) : 0.5;
+    state.workspaceSplitRatio = boundedRatio;
+    const sheetWidth = Math.round(available * state.workspaceSplitRatio);
+    const previewWidth = Math.max(1, available - sheetWidth);
+    dom.workspace.style.setProperty('--sheet-pane-width', `${sheetWidth}px`);
+    dom.workspace.style.setProperty('--preview-pane-width', `${previewWidth}px`);
+    dom.workspaceSplitter.setAttribute('aria-valuenow', String(Math.round(state.workspaceSplitRatio * 100)));
+  }
+
+  function startWorkspaceSplitterDrag(event) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const { available, minSheet, minPreview } = workspacePaneMetrics();
+    state.workspaceSplitterDrag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startSheetWidth: dom.sheetPanel.getBoundingClientRect().width,
+      available,
+      minSheet,
+      minPreview
+    };
+    dom.workspaceSplitter.setPointerCapture(event.pointerId);
+    dom.workspaceSplitter.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+  }
+
+  function moveWorkspaceSplitterDrag(event) {
+    const drag = state.workspaceSplitterDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    event.preventDefault();
+    const sheetWidth = clamp(
+      drag.startSheetWidth + event.clientX - drag.startX,
+      drag.minSheet,
+      drag.available - drag.minPreview
+    );
+    state.workspaceSplitRatio = sheetWidth / drag.available;
+    applyWorkspaceSplitRatio();
+  }
+
+  function endWorkspaceSplitterDrag(event) {
+    const drag = state.workspaceSplitterDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    if (dom.workspaceSplitter.hasPointerCapture(event.pointerId)) {
+      dom.workspaceSplitter.releasePointerCapture(event.pointerId);
+    }
+    dom.workspaceSplitter.classList.remove('dragging');
+    document.body.style.cursor = '';
+    state.workspaceSplitterDrag = null;
+  }
+
+  function resetWorkspaceSplit() {
+    state.workspaceSplitRatio = 0.61;
+    applyWorkspaceSplitRatio();
+    toast('表示幅を初期比率に戻しました。');
+  }
+
+  function keyboardWorkspaceSplitter(event) {
+    if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === 'Home') {
+      resetWorkspaceSplit();
+      return;
+    }
+    const step = event.shiftKey ? 0.08 : 0.02;
+    state.workspaceSplitRatio += event.key === 'ArrowLeft' ? -step : step;
+    applyWorkspaceSplitRatio();
   }
 
   function updatePreviewCanvasSize() {
@@ -1429,6 +1731,8 @@
   function setupEvents() {
     dom.imageInput.addEventListener('change', () => loadImageFile(dom.imageInput.files[0]));
     dom.jsonFileInput.addEventListener('change', () => loadJsonFile(dom.jsonFileInput.files[0]));
+    dom.temporarySaveButton.addEventListener('click', saveTemporaryWorkspace);
+    dom.restoreTemporarySaveButton.addEventListener('click', restoreTemporaryWorkspace);
     dom.saveJsonButton.addEventListener('click', saveJson);
     dom.exportZipButton.addEventListener('click', exportZip);
     dom.addFrameButton.addEventListener('click', addFrame);
@@ -1473,6 +1777,14 @@
     dom.previewCanvas.addEventListener('pointerup', endPreviewDrag);
     dom.previewCanvas.addEventListener('pointercancel', endPreviewDrag);
 
+    dom.workspaceSplitter.addEventListener('pointerdown', startWorkspaceSplitterDrag);
+    dom.workspaceSplitter.addEventListener('pointermove', moveWorkspaceSplitterDrag);
+    dom.workspaceSplitter.addEventListener('pointerup', endWorkspaceSplitterDrag);
+    dom.workspaceSplitter.addEventListener('pointercancel', endWorkspaceSplitterDrag);
+    dom.workspaceSplitter.addEventListener('lostpointercapture', endWorkspaceSplitterDrag);
+    dom.workspaceSplitter.addEventListener('dblclick', resetWorkspaceSplit);
+    dom.workspaceSplitter.addEventListener('keydown', keyboardWorkspaceSplitter);
+
     window.addEventListener('keydown', (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault(); event.shiftKey ? redo() : undo();
@@ -1484,6 +1796,7 @@
     });
 
     new ResizeObserver(resizeSheetCanvas).observe(dom.sheetCanvasWrap);
+    new ResizeObserver(applyWorkspaceSplitRatio).observe(dom.workspace);
   }
 
   async function tryLoadBundledSample() {
@@ -1508,8 +1821,10 @@
     setupTabs();
     bindInputs();
     setupEvents();
+    applyWorkspaceSplitRatio();
     refreshAll();
     requestAnimationFrame(animationLoop);
+    refreshTemporarySaveAvailability();
     tryLoadBundledSample();
   }
 

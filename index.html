@@ -26,6 +26,8 @@
           <input id="jsonFileInput" type="file" accept="application/json,.json" hidden />
           JSONを開く
         </label>
+        <button id="temporarySaveButton" class="button" type="button">一時保存</button>
+        <button id="restoreTemporarySaveButton" class="button" type="button" disabled>復元</button>
         <button id="saveJsonButton" class="button">JSON保存</button>
         <button id="exportZipButton" class="button accent">PNGをZIP出力</button>
       </div>
@@ -58,6 +60,19 @@
           </div>
         </div>
       </section>
+
+      <div
+        id="workspaceSplitter"
+        class="workspace-splitter"
+        role="separator"
+        aria-label="スプライトシートとアニメーションプレビューの幅を調整"
+        aria-orientation="vertical"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow="64"
+        tabindex="0"
+        title="左右へドラッグして表示幅を調整。ダブルクリックで初期比率に戻します。"
+      ><span aria-hidden="true"></span></div>
 
       <section class="preview-panel panel">
         <div class="panel-header">
@@ -202,6 +217,9 @@
             <div class="number-grid two">
               <label>既定表示時間 (ms)<input id="defaultDurationMs" type="number" min="1" step="10" /></label>
               <label class="check-card"><input id="loopPlayback" type="checkbox" />ループ再生</label>
+            </div>
+            <div class="button-row">
+              <button id="applyDurationAllButton" class="button small" type="button">既定表示時間を全フレームへ適用</button>
             </div>
           </fieldset>
         </div>
