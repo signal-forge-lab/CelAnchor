@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>CelAnchor — Sprite Animation Editor</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">CA</div>
+        <div>
+          <h1>CelAnchor</h1>
+          <p>Sprite Animation Editor</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <label class="button primary">
+          <input id="imageInput" type="file" accept="image/png,image/webp,image/jpeg" hidden />
+          スプライトシートを選択
+        </label>
+        <label class="button">
+          <input id="jsonFileInput" type="file" accept="application/json,.json" hidden />
+          JSONを開く
+        </label>
+        <button id="saveJsonButton" class="button">JSON保存</button>
+        <button id="exportZipButton" class="button accent">PNGをZIP出力</button>
+      </div>
+    </header>
+
+    <div id="statusBar" class="statusbar">
+      <span id="imageStatus">画像未選択</span>
+      <span id="validationStatus" class="status-neutral">JSON: 未検証</span>
+      <span id="runtimeStatus">Ready</span>
+    </div>
+
+    <main class="workspace">
+      <section class="sheet-panel panel">
+        <div class="panel-header">
+          <div>
+            <h2>スプライトシート</h2>
+            <p>矩形をドラッグ／リサイズ。ホイールでズーム、空白ドラッグで移動。</p>
+          </div>
+          <div class="toolbar compact">
+            <button id="fitSheetButton" class="icon-button" title="全体表示">全体</button>
+            <button id="actualSizeButton" class="icon-button" title="100%表示">100%</button>
+            <span id="zoomLabel" class="zoom-label">100%</span>
+          </div>
+        </div>
+        <div id="sheetCanvasWrap" class="canvas-wrap sheet-wrap" tabindex="0">
+          <canvas id="sheetCanvas"></canvas>
+          <div id="sheetEmpty" class="empty-state">
+            <strong>スプライトシートを選択してください</strong>
+            <span>PNG / WebP / JPEG</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="preview-panel panel">
+        <div class="panel-header">
+          <div>
+            <h2>アニメーションプレビュー</h2>
+            <p>出力キャンバスと同じ座標系で確認します。</p>
+          </div>
+          <div class="toolbar compact">
+            <button id="previousFrameButton" class="icon-button" title="前のフレーム">◀</button>
+            <button id="playButton" class="icon-button primary" title="再生／一時停止">▶</button>
+            <button id="nextFrameButton" class="icon-button" title="次のフレーム">▶|</button>
+          </div>
+        </div>
+        <div class="preview-area">
+          <div id="previewCanvasWrap" class="preview-canvas-wrap checkerboard">
+            <canvas id="previewCanvas"></canvas>
+          </div>
+          <div class="preview-meta">
+            <span id="previewFrameLabel">Frame 0 / 0</span>
+            <label>表示倍率
+              <select id="previewScaleSelect">
+                <option value="1">1×</option>
+                <option value="2" selected>2×</option>
+                <option value="3">3×</option>
+                <option value="4">4×</option>
+              </select>
+            </label>
+            <label class="check-row"><input id="showGuidesInput" type="checkbox" checked />基準線</label>
+            <label class="check-row"><input id="onionSkinInput" type="checkbox" />前コマ表示</label>
+          </div>
+        </div>
+      </section>
+
+      <aside class="inspector panel">
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="frame">フレーム</button>
+          <button class="tab" data-tab="output">出力</button>
+          <button class="tab" data-tab="json">JSON</button>
+        </div>
+
+        <div id="tab-frame" class="tab-content active">
+          <div class="section-title-row">
+            <h2>選択フレーム</h2>
+            <span id="selectedFrameId" class="badge">なし</span>
+          </div>
+
+          <fieldset id="frameFieldset" disabled>
+            <legend>切り抜き範囲（元画像座標）</legend>
+            <div class="number-grid four">
+              <label>X<input id="sourceX" type="number" step="1" /></label>
+              <label>Y<input id="sourceY" type="number" step="1" /></label>
+              <label>幅<input id="sourceWidth" type="number" min="1" step="1" /></label>
+              <label>高さ<input id="sourceHeight" type="number" min="1" step="1" /></label>
+            </div>
+          </fieldset>
+
+          <fieldset id="positionFieldset" disabled>
+            <legend>位置合わせ</legend>
+            <div class="number-grid two">
+              <label>Pivot X<input id="pivotX" type="number" step="1" /></label>
+              <label>Pivot Y<input id="pivotY" type="number" step="1" /></label>
+              <label>Offset X<input id="offsetX" type="number" step="1" /></label>
+              <label>Offset Y<input id="offsetY" type="number" step="1" /></label>
+            </div>
+            <div class="button-row wrap">
+              <button id="centerPivotButton" class="button small" type="button">Pivotを中央</button>
+              <button id="bottomPivotButton" class="button small" type="button">Pivotを足元中央</button>
+              <button id="trimSelectedFrameButton" class="button small" type="button">透明余白をトリム</button>
+            </div>
+          </fieldset>
+
+          <fieldset id="timingFieldset" disabled>
+            <legend>再生</legend>
+            <div class="number-grid two">
+              <label>表示時間 (ms)<input id="durationMs" type="number" min="1" step="10" /></label>
+              <label class="check-card"><input id="frameEnabled" type="checkbox" />このフレームを有効化</label>
+            </div>
+          </fieldset>
+
+          <div class="button-row frame-actions">
+            <button id="addFrameButton" class="button small">追加</button>
+            <button id="duplicateFrameButton" class="button small" disabled>複製</button>
+            <button id="deleteFrameButton" class="button small danger" disabled>削除</button>
+          </div>
+        </div>
+
+        <div id="tab-output" class="tab-content">
+          <h2>出力キャンバス</h2>
+          <fieldset>
+            <legend>サイズと基準点</legend>
+            <div class="number-grid two">
+              <label>出力幅<input id="outputWidth" type="number" min="1" max="4096" step="1" /></label>
+              <label>出力高さ<input id="outputHeight" type="number" min="1" max="4096" step="1" /></label>
+              <label>Anchor X<input id="anchorX" type="number" step="1" /></label>
+              <label>Anchor Y<input id="anchorY" type="number" step="1" /></label>
+              <label>トリミング X<input id="cropOffsetX" type="number" step="1" /></label>
+              <label>トリミング Y<input id="cropOffsetY" type="number" step="1" /></label>
+            </div>
+            <div class="button-row wrap">
+              <button id="centerAnchorButton" class="button small">Anchorを中央</button>
+              <button id="bottomAnchorButton" class="button small">Anchorを下中央</button>
+            </div>
+            <div class="number-grid two auto-fit-row">
+              <label>自動包含の余白<input id="autoFitMargin" type="number" min="0" max="512" step="1" value="8" /></label>
+              <button id="autoFitOutputButton" class="button small auto-fit-button" type="button">全フレームを包含</button>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>透過処理</legend>
+            <label>モード
+              <select id="transparencyMode">
+                <option value="preserve">元画像の透過を保持</option>
+                <option value="opaque">透過なし（背景色で塗る）</option>
+                <option value="colorKey">指定色を透明化</option>
+                <option value="edgeFlood">端につながる指定色を透明化</option>
+              </select>
+            </label>
+            <div class="number-grid two">
+              <label>対象色<input id="keyColor" type="color" /></label>
+              <label>許容差<input id="colorTolerance" type="number" min="0" max="255" step="1" /></label>
+              <label>非透過時の背景色<input id="matteColor" type="color" /></label>
+            </div>
+            <div class="button-row">
+              <button id="trimAllFramesButton" class="button small" type="button">全フレームの透明余白をトリム</button>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>ファイル</legend>
+            <label>ファイル名パターン<input id="fileNamePattern" type="text" /></label>
+            <label class="check-row"><input id="includeJsonInZip" type="checkbox" checked />編集済みJSONをZIPに含める</label>
+          </fieldset>
+
+          <fieldset>
+            <legend>再生設定</legend>
+            <div class="number-grid two">
+              <label>既定表示時間 (ms)<input id="defaultDurationMs" type="number" min="1" step="10" /></label>
+              <label class="check-card"><input id="loopPlayback" type="checkbox" />ループ再生</label>
+            </div>
+          </fieldset>
+        </div>
+
+        <div id="tab-json" class="tab-content json-tab">
+          <div class="section-title-row">
+            <h2>プロジェクトJSON</h2>
+            <span class="badge">v1</span>
+          </div>
+          <textarea id="jsonEditor" spellcheck="false"></textarea>
+          <div class="button-row wrap">
+            <button id="applyJsonButton" class="button small primary">JSONを適用</button>
+            <button id="formatJsonButton" class="button small">整形</button>
+            <button id="copyJsonButton" class="button small">コピー</button>
+          </div>
+          <pre id="jsonErrors" class="error-box" hidden></pre>
+        </div>
+      </aside>
+    </main>
+
+    <section class="timeline panel">
+      <div class="timeline-header">
+        <div>
+          <h2>タイムライン</h2>
+          <p>クリックで選択。ドラッグで並べ替え。</p>
+        </div>
+        <div class="toolbar compact">
+          <button id="undoButton" class="icon-button" disabled>Undo</button>
+          <button id="redoButton" class="icon-button" disabled>Redo</button>
+        </div>
+      </div>
+      <div id="timelineFrames" class="timeline-frames"></div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>

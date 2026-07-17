@@ -1,0 +1,130 @@
+# CelAnchor
+
+**CelAnchor — Sprite Animation Editor** は、不規則なスプライトシートから各フレームの切り抜き範囲と位置を調整し、アニメーションを確認して、同一サイズのPNGとして出力するローカルWebアプリです。
+
+画像はブラウザ内だけで処理され、外部へ送信されません。外部ライブラリやnpmインストールも不要です。
+
+## 起動
+
+### Windows
+
+`start.bat` をダブルクリックしてください。
+
+Pythonが見つかる場合は、ローカルサーバーを起動して次を開きます。
+
+```text
+http://localhost:8765
+```
+
+Pythonが見つからない場合は `index.html` を直接開きます。直接開いた場合も主要機能は利用できますが、同梱サンプルの自動読込はブラウザ制約により行われません。
+
+### PowerShell
+
+```powershell
+./start.ps1
+```
+
+### 手動起動
+
+```powershell
+python -m http.server 8765
+```
+
+その後、ブラウザで `http://localhost:8765` を開きます。
+
+## 初版の主な機能
+
+- PNG / WebP / JPEGスプライトシート読込
+- CelAnchor Project JSONの貼り付け・読込・保存
+- 元画像サイズを実行時に自動取得（JSONには保持しない）
+- フレームごとに異なる切り抜き矩形
+- シート上での矩形移動・8方向リサイズ
+- Pivot / Offsetによるコマ単位の位置合わせ
+- コマ別表示時間、ループ、無効化
+- ライブアニメーションプレビュー
+- 前コマのオニオンスキン
+- 共通出力サイズ、Anchor、トリミング位置の調整
+- 選択フレーム／全フレームの透明余白自動トリム（Pivotを補正して表示位置を維持）
+- 全フレームの切り抜き矩形を包含する出力キャンバスの自動計算
+- 透過保持、非透過化、指定色透過、端からつながる背景色透過
+- 同一サイズPNGのZIP一括出力
+- 編集済みJSONのZIP同梱
+- Undo / Redo
+- タイムラインのドラッグ並べ替え
+
+## JSON座標
+
+### `source`
+
+元スプライトシート左上を `(0, 0)` とする切り抜き矩形です。
+
+```json
+"source": { "x": 12, "y": 24, "width": 91, "height": 108 }
+```
+
+### `pivot`
+
+切り抜いたフレーム画像内の基準点です。足元を固定する場合は、足元中央を指定します。
+
+```json
+"pivot": { "x": 46, "y": 102 }
+```
+
+### `offset`
+
+フレームごとの位置補正です。
+
+```json
+"offset": { "x": -1, "y": 2 }
+```
+
+### 描画位置
+
+```text
+X = output.anchor.x + frame.offset.x - frame.pivot.x - output.cropOffset.x
+Y = output.anchor.y + frame.offset.y - frame.pivot.y - output.cropOffset.y
+```
+
+`cropOffset`は全フレーム共通の出力トリミング位置調整です。
+
+「全フレームを包含」は、各フレームの `source` / `pivot` / `offset` から共通の最小出力範囲を計算し、指定余白を加えて `output.width` / `output.height` / `output.anchor` を更新します。
+
+## 透過モード
+
+| mode | 動作 |
+|---|---|
+| `preserve` | 元画像のアルファチャンネルをそのまま保持 |
+| `opaque` | 透明部分を `matteColor` で塗り、非透過画像として出力 |
+| `colorKey` | `color` に近い全ピクセルを透明化 |
+| `edgeFlood` | 画像端からつながっている `color` に近い領域だけ透明化 |
+
+`tolerance` は色差の許容値で、0〜255を指定します。
+
+## ファイル名パターン
+
+```text
+frame_{index:03}.png
+```
+
+利用可能な置換：
+
+- `{index}`: 1から始まる出力順
+- `{index:03}`: 3桁ゼロ埋め
+- `{id}`: フレームID
+
+## 同梱ファイル
+
+- `sample-sheet.png`: 不規則な8コマの動作確認用画像
+- `sample.celanchor.json`: サンプル画像用パラメータ
+- `celanchor-project.schema.json`: JSON Schema Draft 2020-12
+
+## 注意
+
+- 1シート＝1アニメーションを前提としています。
+- 元画像の幅と高さは画像読込時に内部取得し、プロジェクトJSONには保存しません。
+- ZIPは外部ライブラリを使わず、ブラウザ内で無圧縮ZIPとして生成します。画像自体がPNG圧縮済みのため、通常の用途では問題ありません。
+- 非常に大きい画像や大量フレームではブラウザのメモリを多く使用する場合があります。
+
+## ライセンス
+
+MIT

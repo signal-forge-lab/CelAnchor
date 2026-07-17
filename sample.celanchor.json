@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "image": {
+    "fileName": "sample-sheet.png"
+  },
+  "playback": {
+    "loop": true,
+    "defaultDurationMs": 110
+  },
+  "transparency": {
+    "mode": "preserve",
+    "color": "#ffffff",
+    "tolerance": 18,
+    "matteColor": "#ffffff"
+  },
+  "output": {
+    "width": 128,
+    "height": 128,
+    "anchor": {
+      "x": 64,
+      "y": 108
+    },
+    "cropOffset": {
+      "x": 0,
+      "y": 0
+    },
+    "fileNamePattern": "frame_{index:03}.png"
+  },
+  "frames": [
+    {"id":"frame-001","source":{"x":8,"y":15,"width":78,"height":90},"pivot":{"x":39,"y":85},"offset":{"x":0,"y":0},"durationMs":110,"enabled":true},
+    {"id":"frame-002","source":{"x":105,"y":11,"width":83,"height":94},"pivot":{"x":41,"y":89},"offset":{"x":0,"y":-1},"durationMs":110,"enabled":true},
+    {"id":"frame-003","source":{"x":207,"y":7,"width":80,"height":98},"pivot":{"x":40,"y":93},"offset":{"x":1,"y":-2},"durationMs":110,"enabled":true},
+    {"id":"frame-004","source":{"x":306,"y":10,"width":85,"height":95},"pivot":{"x":43,"y":90},"offset":{"x":0,"y":-1},"durationMs":110,"enabled":true},
+    {"id":"frame-005","source":{"x":410,"y":15,"width":78,"height":90},"pivot":{"x":39,"y":85},"offset":{"x":0,"y":0},"durationMs":110,"enabled":true},
+    {"id":"frame-006","source":{"x":507,"y":12,"width":84,"height":93},"pivot":{"x":42,"y":88},"offset":{"x":0,"y":1},"durationMs":110,"enabled":true},
+    {"id":"frame-007","source":{"x":610,"y":8,"width":81,"height":97},"pivot":{"x":40,"y":92},"offset":{"x":-1,"y":2},"durationMs":110,"enabled":true},
+    {"id":"frame-008","source":{"x":710,"y":11,"width":84,"height":94},"pivot":{"x":42,"y":89},"offset":{"x":0,"y":1},"durationMs":110,"enabled":true}
+  ]
+}

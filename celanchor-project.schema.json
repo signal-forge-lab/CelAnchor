@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://celanchor.local/schema/celanchor-project-v1.json",
+  "title": "CelAnchor Project v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "playback", "transparency", "output", "frames"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"fileName": {"type": "string"}}
+    },
+    "playback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["loop", "defaultDurationMs"],
+      "properties": {
+        "loop": {"type": "boolean"},
+        "defaultDurationMs": {"type": "integer", "minimum": 1}
+      }
+    },
+    "transparency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "color", "tolerance", "matteColor"],
+      "properties": {
+        "mode": {"enum": ["preserve", "opaque", "colorKey", "edgeFlood"]},
+        "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+        "tolerance": {"type": "integer", "minimum": 0, "maximum": 255},
+        "matteColor": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"}
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "anchor", "cropOffset", "fileNamePattern"],
+      "properties": {
+        "width": {"type": "integer", "minimum": 1, "maximum": 4096},
+        "height": {"type": "integer", "minimum": 1, "maximum": 4096},
+        "anchor": {"$ref": "#/$defs/point"},
+        "cropOffset": {"$ref": "#/$defs/point"},
+        "fileNamePattern": {"type": "string", "minLength": 1}
+      }
+    },
+    "frames": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/frame"}
+    }
+  },
+  "$defs": {
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": {"type": "integer"},
+        "y": {"type": "integer"}
+      }
+    },
+    "rect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": {"type": "integer", "minimum": 0},
+        "y": {"type": "integer", "minimum": 0},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1}
+      }
+    },
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "pivot", "offset", "durationMs", "enabled"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "source": {"$ref": "#/$defs/rect"},
+        "pivot": {"$ref": "#/$defs/point"},
+        "offset": {"$ref": "#/$defs/point"},
+        "durationMs": {"type": "integer", "minimum": 1},
+        "enabled": {"type": "boolean"}
+      }
+    }
+  }
+}
